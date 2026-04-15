@@ -2,19 +2,19 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Tournée Logistique</title>
+<title>Tournée Logistique Pro</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 
 <style>
-body { font-family: Arial; margin:0; }
+body { margin:0; font-family:Arial; }
 #map { height: 65vh; }
 #controls { padding:10px; background:#f5f5f5; }
-input, button { padding:10px; margin:5px; width: 90%; }
+input, button { padding:10px; margin:5px; width:95%; }
 ul { list-style:none; padding:0; }
-li { padding:8px; background:#fff; margin:5px 0; display:flex; justify-content:space-between; }
+li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
 button { width:auto; }
 </style>
 </head>
@@ -22,9 +22,9 @@ button { width:auto; }
 <body>
 
 <div id="controls">
-<input type="text" id="search" placeholder="Ex: Brico Dépôt Saran">
-<button onclick="searchPlace()">Ajouter à la tournée</button>
-<button onclick="resetTour()">Reset</button>
+<input id="search" placeholder="Ex: Brico Dépôt Saran">
+<button onclick="addPlace()">Ajouter point</button>
+<button onclick="clearAll()">Reset</button>
 <ul id="list"></ul>
 </div>
 
@@ -32,85 +32,104 @@ button { width:auto; }
 
 <script>
 
-var map = L.map('map').setView([48.3, 1.9], 8);
+var map = L.map('map').setView([48.3, 1.9], 9);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: 'OSM'
 }).addTo(map);
 
-var depot = {lat:48.389, lon:1.702};
-L.marker([depot.lat, depot.lon]).addTo(map).bindPopup("Départ Janville");
+// 🔥 Départ réel : Sup Bois Janville
+var depotName = "Sup Bois Janville 28310 France";
 
+var depot = null;
 var points = [];
-var markers = [];
-var routeLine;
 
-function searchPlace() {
-    var q = document.getElementById("search").value;
+var markers = [];
+var routeLine = null;
+
+// 📍 géocode départ
+fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + depotName)
+.then(r => r.json())
+.then(d => {
+    depot = {lat:parseFloat(d[0].lat), lon:parseFloat(d[0].lon)};
+    L.marker([depot.lat,depot.lon]).addTo(map).bindPopup("Départ");
+});
+
+// ➕ ajouter point
+function addPlace(){
+
+    let q = document.getElementById("search").value;
 
     fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + q)
-    .then(res => res.json())
-    .then(data => {
-        if(data.length > 0){
-            var p = data[0];
-            addPoint(p.display_name, parseFloat(p.lat), parseFloat(p.lon));
-        } else {
-            alert("Introuvable");
-        }
+    .then(r => r.json())
+    .then(d => {
+
+        if(!d.length) return alert("Introuvable");
+
+        let p = {
+            name:d[0].display_name,
+            lat:parseFloat(d[0].lat),
+            lon:parseFloat(d[0].lon)
+        };
+
+        points.push(p);
+        update();
     });
 }
 
-function addPoint(name, lat, lon){
-    points.push({name, lat, lon});
-    update();
-}
-
-function removePoint(i){
-    points.splice(i,1);
-    update();
-}
-
+// 🧠 optimisation + route réelle
 function update(){
 
-    optimize();
-    drawMarkers();
-    drawList();
-    drawRoute();
-}
+    if(!depot || points.length == 0) return;
 
-function drawList(){
-    var ul = document.getElementById("list");
-    ul.innerHTML = "";
+    let coords = depot.lon + "," + depot.lat + ";";
 
-    points.forEach((p,i)=>{
-        ul.innerHTML += `<li>${i+1} - ${p.name} <button onclick="removePoint(${i})">X</button></li>`;
+    points.forEach(p=>{
+        coords += p.lon + "," + p.lat + ";";
+    });
+
+    coords = coords.slice(0,-1);
+
+    fetch("https://router.project-osrm.org/trip/v1/driving/" + coords + "?source=first&roundtrip=false")
+    .then(r => r.json())
+    .then(data => {
+
+        if(!data.trips) return;
+
+        let order = data.waypoints.map(w => w.waypoint_index);
+
+        let newPoints = [];
+        order.forEach(i=>{
+            if(i==0) return;
+            newPoints.push(points[i-1]);
+        });
+
+        points = newPoints;
+
+        drawRoute(data.trips[0].geometry);
+        drawList();
+        drawMarkers();
     });
 }
 
-function distance(a,b){
-    return Math.sqrt(Math.pow(a.lat-b.lat,2)+Math.pow(a.lon-b.lon,2));
+// 🗺️ affichage route réelle
+function drawRoute(geo){
+
+    if(routeLine) map.removeLayer(routeLine);
+
+    routeLine = L.geoJSON({
+        type:"Feature",
+        geometry: geo
+    }).addTo(map);
+
+    map.fitBounds(routeLine.getBounds());
 }
 
-function optimize(){
-    if(points.length < 2) return;
-
-    let remaining = [...points];
-    let ordered = [];
-    let current = depot;
-
-    while(remaining.length){
-        remaining.sort((a,b)=>distance(current,a)-distance(current,b));
-        let next = remaining.shift();
-        ordered.push(next);
-        current = next;
-    }
-
-    points = ordered;
-}
-
+// 📌 markers
 function drawMarkers(){
-    markers.forEach(m => map.removeLayer(m));
-    markers = [];
+
+    markers.forEach(m=>map.removeLayer(m));
+    markers=[];
 
     points.forEach((p,i)=>{
         let m = L.marker([p.lat,p.lon]).addTo(map)
@@ -119,25 +138,24 @@ function drawMarkers(){
     });
 }
 
-function drawRoute(){
-    if(routeLine) map.removeLayer(routeLine);
+// 📋 liste
+function drawList(){
 
-    let latlngs = [[depot.lat,depot.lon]];
+    let ul = document.getElementById("list");
+    ul.innerHTML="";
 
-    points.forEach(p=>{
-        latlngs.push([p.lat,p.lon]);
+    points.forEach((p,i)=>{
+        ul.innerHTML += `<li>${i+1} - ${p.name}</li>`;
     });
-
-    routeLine = L.polyline(latlngs,{weight:4}).addTo(map);
-    map.fitBounds(routeLine.getBounds());
 }
 
-function resetTour(){
-    points = [];
+// 🔄 reset
+function clearAll(){
+    points=[];
     markers.forEach(m=>map.removeLayer(m));
-    markers = [];
+    markers=[];
     if(routeLine) map.removeLayer(routeLine);
-    document.getElementById("list").innerHTML = "";
+    document.getElementById("list").innerHTML="";
 }
 
 </script>
