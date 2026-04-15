@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>TMS Logistique Stable Clean</title>
+<title>TMS Logistique - Déchargement</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -112,52 +112,56 @@ function optimizeTour(){
 
         drawRoute(trip.geometry);
 
-        buildSchedule(Math.round(trip.duration / 60));
+        buildSchedule(trip);
 
         drawMarkers();
     });
 }
 
-// ---------------- PLANNING ULTRA STABLE ----------------
-function buildSchedule(totalMinutes){
+// ---------------- PLANNING AVEC 30 MIN FIXES ----------------
+function buildSchedule(trip){
 
-    if(stops.length === 0) return;
+    if(!trip.legs) return;
 
     // 🧠 départ basé sur 1er point
     let [h,m] = stops[0].time.split(":");
-
     let current = parseInt(h)*60 + parseInt(m);
-
-    let step = Math.max(1, Math.round(totalMinutes / stops.length));
 
     let html = "";
 
-    stops.forEach((s,i)=>{
+    trip.legs.forEach((leg, i)=>{
+
+        let travelMin = Math.round(leg.duration / 60);
+
+        // 📦 30 min de déchargement FIXE
+        let unloadMin = 30;
 
         let hh = Math.floor(current / 60);
         let mm = current % 60;
 
         let arrival = String(hh).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
 
-        let status = (arrival > s.time) ? "bad" : "ok";
+        let status = (arrival > stops[i].time) ? "bad" : "ok";
 
         html += `
         <li class="${status}">
             <div>
-                ${i+1} - ${s.name}<br>
-                RDV : ${s.time} | Arrivée : ${arrival}
+                ${i+1} - ${stops[i].name}<br>
+                RDV : ${stops[i].time} | Arrivée : ${arrival}<br>
+                🚚 trajet : ${travelMin} min | ⬇ déchargement : ${unloadMin} min
             </div>
-            <button class="small" onclick="removeStop(${i})">❌</button>
+            <button onclick="removeStop(${i})">❌</button>
         </li>
         `;
 
-        current += step;
+        // 👉 temps réel + déchargement
+        current += travelMin + unloadMin;
     });
 
     document.getElementById("list").innerHTML = html;
 
     document.getElementById("stats").innerHTML =
-        "Temps total estimé : " + totalMinutes + " min | Stops : " + stops.length;
+        "Temps total incluant déchargement | Stops : " + stops.length;
 }
 
 // ---------------- ROUTE ----------------
