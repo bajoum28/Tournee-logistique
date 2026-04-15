@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>TMS Logistique - Planning</title>
+<title>TMS Logistique Pro Stable</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -14,7 +14,8 @@ body { margin:0; font-family:Arial; }
 #controls { padding:10px; background:#f5f5f5; }
 input, button { padding:10px; margin:5px; width:95%; }
 ul { list-style:none; padding:0; }
-li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
+li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; align-items:center; }
+button.small { width:auto; padding:5px 10px; }
 #stats { padding:10px; background:#fff; font-weight:bold; }
 .ok { color:green; }
 .bad { color:red; }
@@ -29,7 +30,7 @@ li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:s
 <input id="time" placeholder="Heure 1er point (ex: 08:00)">
 
 <button onclick="addStop()">➕ Ajouter point</button>
-<button onclick="optimize()">⚡ Optimiser tournée</button>
+<button onclick="optimizeTour()">⚡ Optimiser tournée</button>
 <button onclick="exportMaps()">📍 Export Maps</button>
 <button onclick="resetAll()">Reset</button>
 
@@ -77,8 +78,22 @@ function addStop(){
     });
 }
 
+// ---------------- DELETE STOP ----------------
+function removeStop(index){
+
+    stops.splice(index,1);
+
+    drawList();
+
+    if(stops.length >= 2){
+        optimizeTour();
+    } else {
+        clearMap();
+    }
+}
+
 // ---------------- OPTIMISATION ----------------
-function optimize(){
+function optimizeTour(){
 
     if(stops.length < 2) return;
 
@@ -101,18 +116,20 @@ function optimize(){
     });
 }
 
-// ---------------- PLANNING BASE HEURE 1er POINT ----------------
+// ---------------- PLANNING STABLE ----------------
 function buildSchedule(totalDuration){
 
-    // 🧠 HEURE DE DÉPART = 1er point
-    let start = new Date();
-    let [h,m] = stops[0].time.split(":");
+    if(stops.length === 0) return;
 
-    start.setHours(parseInt(h));
-    start.setMinutes(parseInt(m));
+    let start = new Date();
+    let t = stops[0].time.split(":");
+
+    start.setHours(parseInt(t[0],10));
+    start.setMinutes(parseInt(t[1],10));
     start.setSeconds(0);
 
-    let step = totalDuration / stops.length;
+    let totalMin = totalDuration / 60;
+    let step = totalMin / stops.length;
 
     let current = new Date(start);
 
@@ -125,20 +142,27 @@ function buildSchedule(totalDuration){
         let hh = arrival.getHours();
         let mm = String(arrival.getMinutes()).padStart(2,"0");
 
-        let arrivalStr = hh + ":" + mm;
+        let arrivalStr = `${hh}:${mm}`;
 
-        let status = arrivalStr > s.time ? "bad" : "ok";
+        let status = (arrivalStr > s.time) ? "bad" : "ok";
 
         html += `
-        <div class="${status}">
-        ${i+1} - ${s.name}<br>
-        RDV: ${s.time} | Arrivée: ${arrivalStr}
-        </div><hr>`;
+        <li class="${status}">
+            <div>
+                ${i+1} - ${s.name}<br>
+                RDV: ${s.time} | Arrivée: ${arrivalStr}
+            </div>
+            <button class="small" onclick="removeStop(${i})">❌</button>
+        </li>
+        `;
 
-        current.setSeconds(current.getSeconds() + step);
+        current.setMinutes(current.getMinutes() + step);
     });
 
     document.getElementById("list").innerHTML = html;
+
+    document.getElementById("stats").innerHTML =
+        "Distance optimisée | Temps total : " + Math.round(totalMin) + " min";
 }
 
 // ---------------- ROUTE ----------------
@@ -177,7 +201,7 @@ function exportMaps(){
     let base = "https://www.google.com/maps/dir/?api=1";
 
     let origin = stops[0].lat + "," + stops[0].lon;
-    let destination = stops[stops.length-1].lat + "," + stops[stops.length-1].lon;
+    let dest = stops[stops.length-1].lat + "," + stops[stops.length-1].lon;
 
     let waypoints = "";
 
@@ -187,22 +211,27 @@ function exportMaps(){
         .join("|");
     }
 
-    let url = base + "&origin=" + origin + "&destination=" + destination;
+    let url = base + "&origin=" + origin + "&destination=" + dest;
 
     if(waypoints) url += "&waypoints=" + waypoints;
 
     window.open(url,"_blank");
 }
 
-// ---------------- RESET ----------------
-function resetAll(){
-
-    stops = [];
+// ---------------- RESET MAP ----------------
+function clearMap(){
 
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
     if(routeLine) map.removeLayer(routeLine);
+}
+
+// ---------------- RESET ALL ----------------
+function resetAll(){
+
+    stops = [];
+    clearMap();
 
     document.getElementById("list").innerHTML = "";
     document.getElementById("stats").innerHTML = "Aucune tournée";
