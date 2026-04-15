@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Tournée Logistique</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+
+<style>
+body { font-family: Arial; margin:0; }
+#map { height: 65vh; }
+#controls { padding:10px; background:#f5f5f5; }
+input, button { padding:10px; margin:5px; width: 90%; }
+ul { list-style:none; padding:0; }
+li { padding:8px; background:#fff; margin:5px 0; display:flex; justify-content:space-between; }
+button { width:auto; }
+</style>
+</head>
+
+<body>
+
+<div id="controls">
+<input type="text" id="search" placeholder="Ex: Brico Dépôt Saran">
+<button onclick="searchPlace()">Ajouter à la tournée</button>
+<button onclick="resetTour()">Reset</button>
+<ul id="list"></ul>
+</div>
+
+<div id="map"></div>
+
+<script>
+
+var map = L.map('map').setView([48.3, 1.9], 8);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'OSM'
+}).addTo(map);
+
+var depot = {lat:48.389, lon:1.702};
+L.marker([depot.lat, depot.lon]).addTo(map).bindPopup("Départ Janville");
+
+var points = [];
+var markers = [];
+var routeLine;
+
+function searchPlace() {
+    var q = document.getElementById("search").value;
+
+    fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + q)
+    .then(res => res.json())
+    .then(data => {
+        if(data.length > 0){
+            var p = data[0];
+            addPoint(p.display_name, parseFloat(p.lat), parseFloat(p.lon));
+        } else {
+            alert("Introuvable");
+        }
+    });
+}
+
+function addPoint(name, lat, lon){
+    points.push({name, lat, lon});
+    update();
+}
+
+function removePoint(i){
+    points.splice(i,1);
+    update();
+}
+
+function update(){
+
+    optimize();
+    drawMarkers();
+    drawList();
+    drawRoute();
+}
+
+function drawList(){
+    var ul = document.getElementById("list");
+    ul.innerHTML = "";
+
+    points.forEach((p,i)=>{
+        ul.innerHTML += `<li>${i+1} - ${p.name} <button onclick="removePoint(${i})">X</button></li>`;
+    });
+}
+
+function distance(a,b){
+    return Math.sqrt(Math.pow(a.lat-b.lat,2)+Math.pow(a.lon-b.lon,2));
+}
+
+function optimize(){
+    if(points.length < 2) return;
+
+    let remaining = [...points];
+    let ordered = [];
+    let current = depot;
+
+    while(remaining.length){
+        remaining.sort((a,b)=>distance(current,a)-distance(current,b));
+        let next = remaining.shift();
+        ordered.push(next);
+        current = next;
+    }
+
+    points = ordered;
+}
+
+function drawMarkers(){
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+
+    points.forEach((p,i)=>{
+        let m = L.marker([p.lat,p.lon]).addTo(map)
+        .bindPopup((i+1)+" - "+p.name);
+        markers.push(m);
+    });
+}
+
+function drawRoute(){
+    if(routeLine) map.removeLayer(routeLine);
+
+    let latlngs = [[depot.lat,depot.lon]];
+
+    points.forEach(p=>{
+        latlngs.push([p.lat,p.lon]);
+    });
+
+    routeLine = L.polyline(latlngs,{weight:4}).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+}
+
+function resetTour(){
+    points = [];
+    markers.forEach(m=>map.removeLayer(m));
+    markers = [];
+    if(routeLine) map.removeLayer(routeLine);
+    document.getElementById("list").innerHTML = "";
+}
+
+</script>
+
+</body>
+</html>
