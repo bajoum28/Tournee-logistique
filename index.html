@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>TMS Logistique - Déchargement</title>
+<title>TMS Logistique PRO CLEAN</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -89,13 +89,17 @@ function removeStop(i){
         optimizeTour();
     } else {
         clearMap();
+        document.getElementById("stats").innerHTML = "Aucune tournée";
     }
 }
 
 // ---------------- OPTIMISATION ----------------
 function optimizeTour(){
 
-    if(stops.length < 2) return;
+    if(stops.length < 2){
+        alert("Ajoute au moins 2 points");
+        return;
+    }
 
     let coords = stops.map(s => s.lon + "," + s.lat).join(";");
 
@@ -106,7 +110,10 @@ function optimizeTour(){
     .then(r => r.json())
     .then(data => {
 
-        if(!data.trips || !data.trips[0]) return;
+        if(!data.trips || !data.trips[0]){
+            alert("Erreur OSRM");
+            return;
+        }
 
         let trip = data.trips[0];
 
@@ -115,38 +122,44 @@ function optimizeTour(){
         buildSchedule(trip);
 
         drawMarkers();
+    })
+    .catch(err => {
+        console.log(err);
+        alert("Erreur réseau OSRM");
     });
 }
 
-// ---------------- PLANNING AVEC 30 MIN FIXES ----------------
+// ---------------- PLANNING CLEAN ----------------
 function buildSchedule(trip){
 
-    if(!trip.legs || !trip.waypoints) return;
+    if(!trip.legs || trip.legs.length === 0){
+        document.getElementById("list").innerHTML =
+            "<li>Erreur planning</li>";
+        return;
+    }
 
-    // 🧠 ordre réel OSRM
-    let order = trip.waypoints.map(w => w.waypoint_index);
+    // 🧠 ordre OSRM sécurisé
+    let order = trip.waypoints?.map(w => w.waypoint_index) || stops.map((_,i)=>i);
 
-    // 🧠 réorganise les stops selon OSRM
     let orderedStops = order.map(i => stops[i]);
 
-    // 🧠 départ = 1er stop (ordre réel)
+    // 🧠 départ = 1er stop
     let [h,m] = orderedStops[0].time.split(":");
     let current = parseInt(h)*60 + parseInt(m);
 
     let html = "";
 
-    trip.legs.forEach((leg, i)=>{
+    trip.legs.forEach((leg,i)=>{
+
+        let stop = orderedStops[i] || stops[i];
 
         let travelMin = Math.round(leg.duration / 60);
-
-        let unloadMin = 30; // déchargement fixe
-
-        let stop = orderedStops[i];
+        let unloadMin = 30;
 
         let hh = Math.floor(current / 60);
-        let mm = current % 60;
+        let mm = String(current % 60).padStart(2,"0");
 
-        let arrival = String(hh).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
+        let arrival = `${hh}:${mm}`;
 
         let status = (arrival > stop.time) ? "bad" : "ok";
 
@@ -155,9 +168,9 @@ function buildSchedule(trip){
             <div>
                 ${i+1} - ${stop.name}<br>
                 RDV : ${stop.time} | Arrivée : ${arrival}<br>
-                🚚 trajet : ${travelMin} min | ⬇ 30 min déchargement
+                🚚 ${travelMin} min + ⬇ 30 min
             </div>
-            <button onclick="removeStop(${stops.indexOf(stop)})">❌</button>
+            <button class="small" onclick="removeStop(${stops.indexOf(stop)})">❌</button>
         </li>
         `;
 
@@ -167,8 +180,9 @@ function buildSchedule(trip){
     document.getElementById("list").innerHTML = html;
 
     document.getElementById("stats").innerHTML =
-        "Tournée optimisée OK | Stops : " + orderedStops.length;
+        "Tournée OK | Stops : " + stops.length;
 }
+
 // ---------------- ROUTE ----------------
 function drawRoute(geo){
 
@@ -197,7 +211,7 @@ function drawMarkers(){
     });
 }
 
-// ---------------- EXPORT GOOGLE MAPS ----------------
+// ---------------- EXPORT MAPS ----------------
 function exportMaps(){
 
     if(stops.length === 0) return;
