@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>TMS Logistique Pro Stable</title>
+<title>TMS Logistique Stable Clean</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -14,9 +14,9 @@ body { margin:0; font-family:Arial; }
 #controls { padding:10px; background:#f5f5f5; }
 input, button { padding:10px; margin:5px; width:95%; }
 ul { list-style:none; padding:0; }
-li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; align-items:center; }
+li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
 button.small { width:auto; padding:5px 10px; }
-#stats { padding:10px; background:#fff; font-weight:bold; }
+#stats { padding:10px; font-weight:bold; background:#fff; }
 .ok { color:green; }
 .bad { color:red; }
 </style>
@@ -27,7 +27,7 @@ button.small { width:auto; padding:5px 10px; }
 <div id="controls">
 
 <input id="search" placeholder="Adresse (ex: Brico Dépôt Saran)">
-<input id="time" placeholder="Heure 1er point (ex: 08:00)">
+<input id="time" placeholder="Heure départ 1er point (ex: 08:00)">
 
 <button onclick="addStop()">➕ Ajouter point</button>
 <button onclick="optimizeTour()">⚡ Optimiser tournée</button>
@@ -78,10 +78,10 @@ function addStop(){
     });
 }
 
-// ---------------- DELETE STOP ----------------
-function removeStop(index){
+// ---------------- REMOVE STOP ----------------
+function removeStop(i){
 
-    stops.splice(index,1);
+    stops.splice(i,1);
 
     drawList();
 
@@ -111,58 +111,53 @@ function optimizeTour(){
         let trip = data.trips[0];
 
         drawRoute(trip.geometry);
-        buildSchedule(trip.duration);
+
+        buildSchedule(Math.round(trip.duration / 60));
+
         drawMarkers();
     });
 }
 
-// ---------------- PLANNING STABLE ----------------
-function buildSchedule(totalDuration){
+// ---------------- PLANNING ULTRA STABLE ----------------
+function buildSchedule(totalMinutes){
 
     if(stops.length === 0) return;
 
-    let start = new Date();
-    let t = stops[0].time.split(":");
+    // 🧠 départ basé sur 1er point
+    let [h,m] = stops[0].time.split(":");
 
-    start.setHours(parseInt(t[0],10));
-    start.setMinutes(parseInt(t[1],10));
-    start.setSeconds(0);
+    let current = parseInt(h)*60 + parseInt(m);
 
-    let totalMin = totalDuration / 60;
-    let step = totalMin / stops.length;
-
-    let current = new Date(start);
+    let step = Math.max(1, Math.round(totalMinutes / stops.length));
 
     let html = "";
 
     stops.forEach((s,i)=>{
 
-        let arrival = new Date(current);
+        let hh = Math.floor(current / 60);
+        let mm = current % 60;
 
-        let hh = arrival.getHours();
-        let mm = String(arrival.getMinutes()).padStart(2,"0");
+        let arrival = String(hh).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
 
-        let arrivalStr = `${hh}:${mm}`;
-
-        let status = (arrivalStr > s.time) ? "bad" : "ok";
+        let status = (arrival > s.time) ? "bad" : "ok";
 
         html += `
         <li class="${status}">
             <div>
                 ${i+1} - ${s.name}<br>
-                RDV: ${s.time} | Arrivée: ${arrivalStr}
+                RDV : ${s.time} | Arrivée : ${arrival}
             </div>
             <button class="small" onclick="removeStop(${i})">❌</button>
         </li>
         `;
 
-        current.setMinutes(current.getMinutes() + step);
+        current += step;
     });
 
     document.getElementById("list").innerHTML = html;
 
     document.getElementById("stats").innerHTML =
-        "Distance optimisée | Temps total : " + Math.round(totalMin) + " min";
+        "Temps total estimé : " + totalMinutes + " min | Stops : " + stops.length;
 }
 
 // ---------------- ROUTE ----------------
@@ -218,20 +213,15 @@ function exportMaps(){
     window.open(url,"_blank");
 }
 
-// ---------------- RESET MAP ----------------
-function clearMap(){
+// ---------------- RESET ----------------
+function resetAll(){
+
+    stops = [];
 
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
     if(routeLine) map.removeLayer(routeLine);
-}
-
-// ---------------- RESET ALL ----------------
-function resetAll(){
-
-    stops = [];
-    clearMap();
 
     document.getElementById("list").innerHTML = "";
     document.getElementById("stats").innerHTML = "Aucune tournée";
