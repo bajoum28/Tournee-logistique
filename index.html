@@ -121,10 +121,16 @@ function optimizeTour(){
 // ---------------- PLANNING AVEC 30 MIN FIXES ----------------
 function buildSchedule(trip){
 
-    if(!trip.legs) return;
+    if(!trip.legs || !trip.waypoints) return;
 
-    // 🧠 départ basé sur 1er point
-    let [h,m] = stops[0].time.split(":");
+    // 🧠 ordre réel OSRM
+    let order = trip.waypoints.map(w => w.waypoint_index);
+
+    // 🧠 réorganise les stops selon OSRM
+    let orderedStops = order.map(i => stops[i]);
+
+    // 🧠 départ = 1er stop (ordre réel)
+    let [h,m] = orderedStops[0].time.split(":");
     let current = parseInt(h)*60 + parseInt(m);
 
     let html = "";
@@ -133,37 +139,36 @@ function buildSchedule(trip){
 
         let travelMin = Math.round(leg.duration / 60);
 
-        // 📦 30 min de déchargement FIXE
-        let unloadMin = 30;
+        let unloadMin = 30; // déchargement fixe
+
+        let stop = orderedStops[i];
 
         let hh = Math.floor(current / 60);
         let mm = current % 60;
 
         let arrival = String(hh).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
 
-        let status = (arrival > stops[i].time) ? "bad" : "ok";
+        let status = (arrival > stop.time) ? "bad" : "ok";
 
         html += `
         <li class="${status}">
             <div>
-                ${i+1} - ${stops[i].name}<br>
-                RDV : ${stops[i].time} | Arrivée : ${arrival}<br>
-                🚚 trajet : ${travelMin} min | ⬇ déchargement : ${unloadMin} min
+                ${i+1} - ${stop.name}<br>
+                RDV : ${stop.time} | Arrivée : ${arrival}<br>
+                🚚 trajet : ${travelMin} min | ⬇ 30 min déchargement
             </div>
-            <button onclick="removeStop(${i})">❌</button>
+            <button onclick="removeStop(${stops.indexOf(stop)})">❌</button>
         </li>
         `;
 
-        // 👉 temps réel + déchargement
         current += travelMin + unloadMin;
     });
 
     document.getElementById("list").innerHTML = html;
 
     document.getElementById("stats").innerHTML =
-        "Temps total incluant déchargement | Stops : " + stops.length;
+        "Tournée optimisée OK | Stops : " + orderedStops.length;
 }
-
 // ---------------- ROUTE ----------------
 function drawRoute(geo){
 
