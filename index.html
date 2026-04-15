@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Tournée Logistique Pro</title>
+<title>Tournée Logistique PRO++</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -10,11 +10,12 @@
 
 <style>
 body { margin:0; font-family:Arial; }
-#map { height: 60vh; }
+#map { height: 55vh; }
 #controls { padding:10px; background:#f5f5f5; }
 input, button { padding:10px; margin:5px; width:95%; }
+button.small { width:auto; padding:5px 10px; }
 ul { list-style:none; padding:0; }
-li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
+li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; align-items:center; }
 #stats { padding:10px; background:#fff; font-weight:bold; }
 </style>
 </head>
@@ -23,8 +24,11 @@ li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:s
 
 <div id="controls">
 <input id="search" placeholder="Ex: Brico Dépôt Saran">
-<button onclick="addPlace()">Ajouter point</button>
-<button onclick="clearAll()">Reset</button>
+
+<button onclick="addPlace()">➕ Ajouter point</button>
+<button onclick="optimizeRoute()">⚡ Optimiser la tournée</button>
+<button onclick="clearAll()">🧹 Reset</button>
+
 <ul id="list"></ul>
 </div>
 
@@ -65,18 +69,14 @@ function addPlace(){
             lon: parseFloat(d[0].lon)
         });
 
-        updateRoute();
+        drawList();
     });
 }
 
-// ---------------- ROUTE (TRIP API) ----------------
-function updateRoute(){
+// ---------------- OPTIMISATION + ROUTE ----------------
+function optimizeRoute(){
 
-    if(points.length < 2){
-        drawMarkers();
-        drawList();
-        return;
-    }
+    if(points.length < 2) return;
 
     let coords = points.map(p => p.lon + "," + p.lat).join(";");
 
@@ -88,7 +88,7 @@ function updateRoute(){
     .then(data => {
 
         if(!data.trips || !data.trips[0]) {
-            alert("Erreur calcul route");
+            alert("Erreur optimisation");
             return;
         }
 
@@ -99,12 +99,11 @@ function updateRoute(){
 
         drawRoute(trip.geometry);
         drawMarkers();
-        drawList();
         updateStats();
     });
 }
 
-// ---------------- DRAW ROUTE ----------------
+// ---------------- ROUTE ----------------
 function drawRoute(geo){
 
     if(routeLine) map.removeLayer(routeLine);
@@ -123,6 +122,7 @@ function drawMarkers(){
     markers = [];
 
     points.forEach((p,i)=>{
+
         let m = L.marker([p.lat,p.lon])
         .addTo(map)
         .bindPopup((i+1)+" - "+p.name);
@@ -131,15 +131,34 @@ function drawMarkers(){
     });
 }
 
-// ---------------- LIST ----------------
+// ---------------- LIST + DELETE ----------------
 function drawList(){
 
     let ul = document.getElementById("list");
     ul.innerHTML = "";
 
     points.forEach((p,i)=>{
-        ul.innerHTML += `<li>${i+1} - ${p.name}</li>`;
+
+        ul.innerHTML += `
+        <li>
+            ${i+1} - ${p.name}
+            <button class="small" onclick="removePoint(${i})">❌</button>
+        </li>`;
     });
+}
+
+// ❌ supprimer point
+function removePoint(i){
+
+    points.splice(i,1);
+
+    drawList();
+
+    if(points.length >= 2){
+        optimizeRoute();
+    } else {
+        clearMap();
+    }
 }
 
 // ---------------- STATS ----------------
@@ -154,13 +173,20 @@ function clearAll(){
 
     points = [];
 
+    clearMap();
+    drawList();
+
+    document.getElementById("stats").innerHTML =
+        "Distance : 0 km | Temps : 0 min";
+}
+
+// ---------------- CLEAN MAP ----------------
+function clearMap(){
+
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
     if(routeLine) map.removeLayer(routeLine);
-
-    document.getElementById("list").innerHTML = "";
-    document.getElementById("stats").innerHTML = "Distance : 0 km | Temps : 0 min";
 }
 
 </script>
