@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Tournée Logistique PRO++</title>
+<title>TMS Logistique Complet</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -13,26 +13,30 @@ body { margin:0; font-family:Arial; }
 #map { height: 55vh; }
 #controls { padding:10px; background:#f5f5f5; }
 input, button { padding:10px; margin:5px; width:95%; }
-button.small { width:auto; padding:5px 10px; }
 ul { list-style:none; padding:0; }
-li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; align-items:center; }
+li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
 #stats { padding:10px; background:#fff; font-weight:bold; }
+.ok { color:green; }
+.bad { color:red; }
 </style>
 </head>
 
 <body>
 
 <div id="controls">
-<input id="search" placeholder="Ex: Brico Dépôt Saran">
 
-<button onclick="addPlace()">➕ Ajouter point</button>
-<button onclick="optimizeRoute()">⚡ Optimiser la tournée</button>
-<button onclick="clearAll()">🧹 Reset</button>
+<input id="search" placeholder="Adresse (ex: Brico Dépôt Saran)">
+<input id="time" placeholder="Heure RDV (ex: 10:30)">
+
+<button onclick="addStop()">➕ Ajouter arrêt</button>
+<button onclick="optimizeTour()">⚡ Optimiser tournée</button>
+<button onclick="exportMaps()">📍 Export Maps</button>
+<button onclick="resetAll()">Reset</button>
 
 <ul id="list"></ul>
 </div>
 
-<div id="stats">Distance : 0 km | Temps : 0 min</div>
+<div id="stats">Aucune tournée</div>
 <div id="map"></div>
 
 <script>
@@ -43,19 +47,18 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// ---------------- DATA ----------------
-var points = [];
-var markers = [];
-var routeLine = null;
+// DATA
+let stops = [];
+let markers = [];
+let routeLine = null;
 
-var totalKm = 0;
-var totalTime = 0;
-
-// ---------------- ADD POINT ----------------
-function addPlace(){
+// ➕ AJOUT STOP
+function addStop(){
 
     let q = document.getElementById("search").value;
-    if(!q) return;
+    let t = document.getElementById("time").value;
+
+    if(!q || !t) return alert("Adresse + heure obligatoires");
 
     fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(q))
     .then(r => r.json())
@@ -63,22 +66,23 @@ function addPlace(){
 
         if(!d.length) return alert("Introuvable");
 
-        points.push({
-            name: d[0].display_name,
-            lat: parseFloat(d[0].lat),
-            lon: parseFloat(d[0].lon)
+        stops.push({
+            name:d[0].display_name,
+            lat:parseFloat(d[0].lat),
+            lon:parseFloat(d[0].lon),
+            time:t
         });
 
         drawList();
     });
 }
 
-// ---------------- OPTIMISATION + ROUTE ----------------
-function optimizeRoute(){
+// ⚡ OPTIMISATION TMS
+function optimizeTour(){
 
-    if(points.length < 2) return;
+    if(stops.length < 2) return;
 
-    let coords = points.map(p => p.lon + "," + p.lat).join(";");
+    let coords = stops.map(s => s.lon + "," + s.lat).join(";");
 
     fetch("https://router.project-osrm.org/trip/v1/driving/" +
         coords +
@@ -87,106 +91,124 @@ function optimizeRoute(){
     .then(r => r.json())
     .then(data => {
 
-        if(!data.trips || !data.trips[0]) {
-            alert("Erreur optimisation");
-            return;
-        }
+        if(!data.trips || !data.trips[0]) return;
 
         let trip = data.trips[0];
 
-        totalKm = (trip.distance / 1000).toFixed(1);
-        totalTime = Math.round(trip.duration / 60);
-
         drawRoute(trip.geometry);
+        computePlanning(trip.duration, trip.distance);
         drawMarkers();
-        updateStats();
     });
 }
 
-// ---------------- ROUTE ----------------
+// 🧠 PLANNING HORAIRE
+function computePlanning(duration, distance){
+
+    let start = new Date();
+    let stepTime = duration / stops.length;
+
+    let html = "";
+
+    stops.forEach((s,i)=>{
+
+        let arr = new Date(start.getTime() + stepTime*i*1000);
+
+        let hh = arr.getHours();
+        let mm = String(arr.getMinutes()).padStart(2,"0");
+
+        let arrival = hh + ":" + mm;
+
+        let status = arrival > s.time ? "bad" : "ok";
+
+        html += `
+        <div class="${status}">
+        ${i+1} - ${s.name}<br>
+        RDV: ${s.time} | Arrivée: ${arrival}
+        </div><hr>`;
+    });
+
+    document.getElementById("stats").innerHTML =
+        "Distance totale : " + (distance/1000).toFixed(1) + " km | TMS actif";
+
+    document.getElementById("list").innerHTML = html;
+}
+
+// 🗺️ ROUTE
 function drawRoute(geo){
 
     if(routeLine) map.removeLayer(routeLine);
 
-    routeLine = L.geoJSON(geo, {
-        style: { color: "blue", weight: 4 }
+    routeLine = L.geoJSON(geo,{
+        style:{color:"blue",weight:4}
     }).addTo(map);
 
     map.fitBounds(routeLine.getBounds());
 }
 
-// ---------------- MARKERS ----------------
+// 📍 MARKERS
 function drawMarkers(){
 
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
-    points.forEach((p,i)=>{
+    stops.forEach((s,i)=>{
 
-        let m = L.marker([p.lat,p.lon])
-        .addTo(map)
-        .bindPopup((i+1)+" - "+p.name);
-
-        markers.push(m);
+        markers.push(
+            L.marker([s.lat,s.lon])
+            .addTo(map)
+            .bindPopup((i+1)+" - "+s.name+"<br>"+s.time)
+        );
     });
 }
 
-// ---------------- LIST + DELETE ----------------
+// 📋 LISTE
 function drawList(){
 
     let ul = document.getElementById("list");
     ul.innerHTML = "";
 
-    points.forEach((p,i)=>{
-
-        ul.innerHTML += `
-        <li>
-            ${i+1} - ${p.name}
-            <button class="small" onclick="removePoint(${i})">❌</button>
-        </li>`;
+    stops.forEach((s,i)=>{
+        ul.innerHTML += `<li>${i+1} - ${s.name} | ${s.time}</li>`;
     });
 }
 
-// ❌ supprimer point
-function removePoint(i){
+// 📍 EXPORT GOOGLE MAPS
+function exportMaps(){
 
-    points.splice(i,1);
+    if(stops.length === 0) return;
 
-    drawList();
+    let base = "https://www.google.com/maps/dir/?api=1";
 
-    if(points.length >= 2){
-        optimizeRoute();
-    } else {
-        clearMap();
+    let origin = stops[0].lat + "," + stops[0].lon;
+    let dest = stops[stops.length-1].lat + "," + stops[stops.length-1].lon;
+
+    let waypoints = "";
+
+    if(stops.length > 2){
+        waypoints = stops.slice(1,-1)
+        .map(s => s.lat + "," + s.lon)
+        .join("|");
     }
+
+    let url = base + "&origin=" + origin + "&destination=" + dest;
+
+    if(waypoints) url += "&waypoints=" + waypoints;
+
+    window.open(url,"_blank");
 }
 
-// ---------------- STATS ----------------
-function updateStats(){
+// 🔄 RESET
+function resetAll(){
 
-    document.getElementById("stats").innerHTML =
-        "Distance : " + totalKm + " km | Temps : " + totalTime + " min";
-}
-
-// ---------------- RESET ----------------
-function clearAll(){
-
-    points = [];
-
-    clearMap();
-    drawList();
-
-    document.getElementById("stats").innerHTML =
-        "Distance : 0 km | Temps : 0 min";
-}
-
-// ---------------- CLEAN MAP ----------------
-function clearMap(){
+    stops = [];
 
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
     if(routeLine) map.removeLayer(routeLine);
+
+    document.getElementById("list").innerHTML = "";
+    document.getElementById("stats").innerHTML = "Aucune tournée";
 }
 
 </script>
