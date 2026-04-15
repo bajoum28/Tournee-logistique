@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Tournée Logistique Pro</title>
+<title>Tournée Logistique</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -10,12 +10,12 @@
 
 <style>
 body { margin:0; font-family:Arial; }
-#map { height: 65vh; }
+#map { height: 60vh; }
 #controls { padding:10px; background:#f5f5f5; }
 input, button { padding:10px; margin:5px; width:95%; }
 ul { list-style:none; padding:0; }
 li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
-button { width:auto; }
+#stats { padding:10px; background:#fff; font-weight:bold; }
 </style>
 </head>
 
@@ -28,61 +28,58 @@ button { width:auto; }
 <ul id="list"></ul>
 </div>
 
+<div id="stats">Distance : 0 km | Temps : 0 min</div>
 <div id="map"></div>
 
 <script>
 
-var map = L.map('map').setView([48.3, 1.9], 9);
+var map = L.map('map').setView([48.3, 1.9], 8);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: 'OSM'
+    attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// 🔥 Départ réel : Sup Bois Janville
-var depotName = "Sup Bois Janville 28310 France";
-
-var depot = null;
+// -------------------- DATA --------------------
 var points = [];
-
 var markers = [];
 var routeLine = null;
 
-// 📍 géocode départ
-fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + depotName)
-.then(r => r.json())
-.then(d => {
-    depot = {lat:parseFloat(d[0].lat), lon:parseFloat(d[0].lon)};
-    L.marker([depot.lat,depot.lon]).addTo(map).bindPopup("Départ");
-});
+var totalKm = 0;
+var totalTime = 0;
 
-// ➕ ajouter point
+// -------------------- ADD POINT --------------------
 function addPlace(){
 
     let q = document.getElementById("search").value;
 
-    fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + q)
+    if(!q) return;
+
+    fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(q))
     .then(r => r.json())
     .then(d => {
 
         if(!d.length) return alert("Introuvable");
 
-        let p = {
-            name:d[0].display_name,
-            lat:parseFloat(d[0].lat),
-            lon:parseFloat(d[0].lon)
-        };
+        points.push({
+            name: d[0].display_name,
+            lat: parseFloat(d[0].lat),
+            lon: parseFloat(d[0].lon)
+        });
 
-        points.push(p);
-        update();
+        updateRoute();
     });
 }
 
-// 🧠 optimisation + route réelle
-function update(){
+// -------------------- ROUTE CALC --------------------
+function updateRoute(){
 
-    if(!depot || points.length == 0) return;
+    if(points.length < 2){
+        drawMarkers();
+        drawList();
+        return;
+    }
 
-    let coords = depot.lon + "," + depot.lat + ";";
+    let coords = "";
 
     points.forEach(p=>{
         coords += p.lon + "," + p.lat + ";";
@@ -90,72 +87,84 @@ function update(){
 
     coords = coords.slice(0,-1);
 
-    fetch("https://router.project-osrm.org/trip/v1/driving/" + coords + "?source=first&roundtrip=false")
+    fetch("https://router.project-osrm.org/route/v1/driving/" +
+        coords +
+        "?overview=full&geometries=geojson"
+    )
     .then(r => r.json())
     .then(data => {
 
-        if(!data.trips) return;
+        if(!data.routes) return;
 
-        let order = data.waypoints.map(w => w.waypoint_index);
+        let route = data.routes[0];
 
-        let newPoints = [];
-        order.forEach(i=>{
-            if(i==0) return;
-            newPoints.push(points[i-1]);
-        });
+        totalKm = (route.distance / 1000).toFixed(1);
+        totalTime = Math.round(route.duration / 60);
 
-        points = newPoints;
-
-        drawRoute(data.trips[0].geometry);
-        drawList();
+        drawRoute(route.geometry);
         drawMarkers();
+        drawList();
+        updateStats();
     });
 }
 
-// 🗺️ affichage route réelle
+// -------------------- DRAW ROUTE --------------------
 function drawRoute(geo){
 
     if(routeLine) map.removeLayer(routeLine);
 
-    routeLine = L.geoJSON({
-        type:"Feature",
-        geometry: geo
+    routeLine = L.geoJSON(geo, {
+        style: { color: "blue", weight: 4 }
     }).addTo(map);
 
     map.fitBounds(routeLine.getBounds());
 }
 
-// 📌 markers
+// -------------------- MARKERS --------------------
 function drawMarkers(){
 
-    markers.forEach(m=>map.removeLayer(m));
-    markers=[];
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
 
     points.forEach((p,i)=>{
-        let m = L.marker([p.lat,p.lon]).addTo(map)
+        let m = L.marker([p.lat,p.lon])
+        .addTo(map)
         .bindPopup((i+1)+" - "+p.name);
+
         markers.push(m);
     });
 }
 
-// 📋 liste
+// -------------------- LIST --------------------
 function drawList(){
 
     let ul = document.getElementById("list");
-    ul.innerHTML="";
+    ul.innerHTML = "";
 
     points.forEach((p,i)=>{
         ul.innerHTML += `<li>${i+1} - ${p.name}</li>`;
     });
 }
 
-// 🔄 reset
+// -------------------- STATS --------------------
+function updateStats(){
+
+    document.getElementById("stats").innerHTML =
+        "Distance : " + totalKm + " km | Temps : " + totalTime + " min";
+}
+
+// -------------------- RESET --------------------
 function clearAll(){
-    points=[];
-    markers.forEach(m=>map.removeLayer(m));
-    markers=[];
+
+    points = [];
+
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+
     if(routeLine) map.removeLayer(routeLine);
-    document.getElementById("list").innerHTML="";
+
+    document.getElementById("list").innerHTML = "";
+    document.getElementById("stats").innerHTML = "Distance : 0 km | Temps : 0 min";
 }
 
 </script>
