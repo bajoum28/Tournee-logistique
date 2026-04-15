@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Tournée Logistique</title>
+<title>Tournée Logistique Pro</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -39,7 +39,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// -------------------- DATA --------------------
+// ---------------- DATA ----------------
 var points = [];
 var markers = [];
 var routeLine = null;
@@ -47,11 +47,10 @@ var routeLine = null;
 var totalKm = 0;
 var totalTime = 0;
 
-// -------------------- ADD POINT --------------------
+// ---------------- ADD POINT ----------------
 function addPlace(){
 
     let q = document.getElementById("search").value;
-
     if(!q) return;
 
     fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(q))
@@ -70,7 +69,7 @@ function addPlace(){
     });
 }
 
-// -------------------- ROUTE CALC --------------------
+// ---------------- ROUTE (TRIP API) ----------------
 function updateRoute(){
 
     if(points.length < 2){
@@ -79,36 +78,33 @@ function updateRoute(){
         return;
     }
 
-    let coords = "";
+    let coords = points.map(p => p.lon + "," + p.lat).join(";");
 
-    points.forEach(p=>{
-        coords += p.lon + "," + p.lat + ";";
-    });
-
-    coords = coords.slice(0,-1);
-
-    fetch("https://router.project-osrm.org/route/v1/driving/" +
+    fetch("https://router.project-osrm.org/trip/v1/driving/" +
         coords +
-        "?overview=full&geometries=geojson"
+        "?source=first&roundtrip=false&overview=full&geometries=geojson"
     )
     .then(r => r.json())
     .then(data => {
 
-        if(!data.routes) return;
+        if(!data.trips || !data.trips[0]) {
+            alert("Erreur calcul route");
+            return;
+        }
 
-        let route = data.routes[0];
+        let trip = data.trips[0];
 
-        totalKm = (route.distance / 1000).toFixed(1);
-        totalTime = Math.round(route.duration / 60);
+        totalKm = (trip.distance / 1000).toFixed(1);
+        totalTime = Math.round(trip.duration / 60);
 
-        drawRoute(route.geometry);
+        drawRoute(trip.geometry);
         drawMarkers();
         drawList();
         updateStats();
     });
 }
 
-// -------------------- DRAW ROUTE --------------------
+// ---------------- DRAW ROUTE ----------------
 function drawRoute(geo){
 
     if(routeLine) map.removeLayer(routeLine);
@@ -120,7 +116,7 @@ function drawRoute(geo){
     map.fitBounds(routeLine.getBounds());
 }
 
-// -------------------- MARKERS --------------------
+// ---------------- MARKERS ----------------
 function drawMarkers(){
 
     markers.forEach(m => map.removeLayer(m));
@@ -135,7 +131,7 @@ function drawMarkers(){
     });
 }
 
-// -------------------- LIST --------------------
+// ---------------- LIST ----------------
 function drawList(){
 
     let ul = document.getElementById("list");
@@ -146,14 +142,14 @@ function drawList(){
     });
 }
 
-// -------------------- STATS --------------------
+// ---------------- STATS ----------------
 function updateStats(){
 
     document.getElementById("stats").innerHTML =
         "Distance : " + totalKm + " km | Temps : " + totalTime + " min";
 }
 
-// -------------------- RESET --------------------
+// ---------------- RESET ----------------
 function clearAll(){
 
     points = [];
