@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>TMS Logistique PRO CLEAN</title>
+<title>TMS Logistique Stable PRO</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -110,6 +110,8 @@ function optimizeTour(){
     .then(r => r.json())
     .then(data => {
 
+        console.log("OSRM:", data);
+
         if(!data.trips || !data.trips[0]){
             alert("Erreur OSRM");
             return;
@@ -118,9 +120,7 @@ function optimizeTour(){
         let trip = data.trips[0];
 
         drawRoute(trip.geometry);
-
         buildSchedule(trip);
-
         drawMarkers();
     })
     .catch(err => {
@@ -129,7 +129,7 @@ function optimizeTour(){
     });
 }
 
-// ---------------- PLANNING CLEAN ----------------
+// ---------------- PLANNING STABLE ----------------
 function buildSchedule(trip){
 
     if(!trip.legs || trip.legs.length === 0){
@@ -138,12 +138,8 @@ function buildSchedule(trip){
         return;
     }
 
-    // 🧠 ordre OSRM sécurisé
-    let order = trip.waypoints?.map(w => w.waypoint_index) || stops.map((_,i)=>i);
+    let orderedStops = [...stops];
 
-    let orderedStops = order.map(i => stops[i]);
-
-    // 🧠 départ = 1er stop
     let [h,m] = orderedStops[0].time.split(":");
     let current = parseInt(h)*60 + parseInt(m);
 
@@ -168,9 +164,9 @@ function buildSchedule(trip){
             <div>
                 ${i+1} - ${stop.name}<br>
                 RDV : ${stop.time} | Arrivée : ${arrival}<br>
-                🚚 ${travelMin} min + ⬇ 30 min
+                🚚 trajet : ${travelMin} min + ⬇ 30 min
             </div>
-            <button class="small" onclick="removeStop(${stops.indexOf(stop)})">❌</button>
+            <button class="small" onclick="removeStop(${i})">❌</button>
         </li>
         `;
 
@@ -180,7 +176,7 @@ function buildSchedule(trip){
     document.getElementById("list").innerHTML = html;
 
     document.getElementById("stats").innerHTML =
-        "Tournée OK | Stops : " + stops.length;
+        "Tournée active | Stops : " + stops.length;
 }
 
 // ---------------- ROUTE ----------------
@@ -211,7 +207,7 @@ function drawMarkers(){
     });
 }
 
-// ---------------- EXPORT MAPS ----------------
+// ---------------- EXPORT GOOGLE MAPS ----------------
 function exportMaps(){
 
     if(stops.length === 0) return;
