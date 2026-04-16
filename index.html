@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>TMS Stable Fonctionnel</title>
+<title>TMS Multi Clients</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
@@ -15,7 +15,6 @@ body { margin:0; font-family:Arial; }
 input, button { padding:10px; margin:5px; width:95%; }
 ul { list-style:none; padding:0; }
 li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
-button.small { width:auto; }
 .ok { color:green; }
 .bad { color:red; }
 </style>
@@ -46,7 +45,7 @@ let stops = [];
 let markers = [];
 let routeLine;
 
-// ---------------- ADD ----------------
+// ---------------- ADD STOP (MULTI CLIENTS) ----------------
 function addStop(){
 
 let q = document.getElementById("search").value;
@@ -58,12 +57,28 @@ fetch("https://nominatim.openstreetmap.org/search?format=json&q="+q)
 .then(r=>r.json())
 .then(d=>{
 
-stops.push({
-name:d[0].display_name,
-lat:parseFloat(d[0].lat),
-lon:parseFloat(d[0].lon),
-time:t
-});
+let lat = parseFloat(d[0].lat);
+let lon = parseFloat(d[0].lon);
+
+// 🔥 recherche point existant
+let existing = stops.find(s =>
+    Math.abs(s.lat - lat) < 0.0001 &&
+    Math.abs(s.lon - lon) < 0.0001
+);
+
+if(existing){
+    existing.clients += 1;
+    existing.unload += 30;
+}else{
+    stops.push({
+        name:d[0].display_name,
+        lat:lat,
+        lon:lon,
+        time:t,
+        clients:1,
+        unload:30
+    });
+}
 
 drawList();
 
@@ -74,8 +89,12 @@ drawList();
 function drawList(){
 let html="";
 stops.forEach((s,i)=>{
-html+=`<li>${i+1} - ${s.name} (${s.time}) 
-<button onclick="removeStop(${i})">X</button></li>`;
+html+=`
+<li>
+${i+1} - ${s.name}<br>
+Clients: ${s.clients} | Déchargement: ${s.unload} min
+<button onclick="removeStop(${i})">X</button>
+</li>`;
 });
 document.getElementById("list").innerHTML=html;
 }
@@ -91,10 +110,9 @@ function calculate(){
 
 if(stops.length<2) return alert("2 points minimum");
 
-// ordre simple (tu peux optimiser plus tard)
 let coords = stops.map(s=>s.lon+","+s.lat).join(";");
 
-fetch("https://router.project-osrm.org/route/v1/driving/"+coords+"?overview=full&geometries=geojson&steps=true")
+fetch("https://router.project-osrm.org/route/v1/driving/"+coords+"?overview=full&geometries=geojson")
 .then(r=>r.json())
 .then(data=>{
 
@@ -104,7 +122,6 @@ drawRoute(route.geometry);
 buildPlanning(route);
 
 });
-
 }
 
 // ---------------- ROUTE ----------------
@@ -121,30 +138,33 @@ map.fitBounds(routeLine.getBounds());
 // ---------------- PLANNING ----------------
 function buildPlanning(route){
 
-let steps = route.legs;
+let legs = route.legs;
 
 let [h,m] = stops[0].time.split(":");
 let current = parseInt(h)*60 + parseInt(m);
 
 let html="";
 
-steps.forEach((leg,i)=>{
+legs.forEach((leg,i)=>{
+
+let stop = stops[i];
 
 let travel = Math.round(leg.duration/60);
-let unload = 30;
+let unload = stop.unload;
 
 let hh = Math.floor(current/60);
 let mm = String(current%60).padStart(2,"0");
 
 let arrival = hh+":"+mm;
 
-let status = (arrival > stops[i].time) ? "bad":"ok";
+let status = (arrival > stop.time) ? "bad":"ok";
 
 html+=`
 <li class="${status}">
-${i+1} - ${stops[i].name}<br>
-RDV: ${stops[i].time} | Arrivée: ${arrival}<br>
-Trajet: ${travel} min + 30 min
+${i+1} - ${stop.name}<br>
+Clients: ${stop.clients}<br>
+RDV: ${stop.time} | Arrivée: ${arrival}<br>
+Trajet: ${travel} min + Déchargement: ${unload} min
 </li>
 `;
 
