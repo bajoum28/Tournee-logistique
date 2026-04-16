@@ -2,19 +2,22 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>TMS Multi Clients</title>
+<title>TMS Drag & Drop</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 
+<!-- Drag & Drop -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
 <style>
 body { margin:0; font-family:Arial; }
-#map { height: 55vh; }
+#map { height: 50vh; }
 #controls { padding:10px; background:#f5f5f5; }
 input, button { padding:10px; margin:5px; width:95%; }
 ul { list-style:none; padding:0; }
-li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:space-between; }
+li { background:#fff; margin:5px 0; padding:10px; cursor:grab; }
 .ok { color:green; }
 .bad { color:red; }
 </style>
@@ -24,7 +27,7 @@ li { background:#fff; margin:5px 0; padding:8px; display:flex; justify-content:s
 
 <div id="controls">
 <input id="search" placeholder="Adresse">
-<input id="time" placeholder="Heure départ ex: 06:00">
+<input id="time" placeholder="Heure RDV ex: 09:00">
 
 <button onclick="addStop()">Ajouter</button>
 <button onclick="calculate()">Calculer tournée</button>
@@ -42,10 +45,19 @@ var map = L.map('map').setView([48.3, 1.9], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let stops = [];
-let markers = [];
 let routeLine;
 
-// ---------------- ADD STOP (MULTI CLIENTS) ----------------
+// ---------------- DRAG INIT ----------------
+new Sortable(document.getElementById("list"), {
+    animation: 150,
+    onEnd: function (evt) {
+        let movedItem = stops.splice(evt.oldIndex, 1)[0];
+        stops.splice(evt.newIndex, 0, movedItem);
+        drawList();
+    }
+});
+
+// ---------------- ADD STOP ----------------
 function addStop(){
 
 let q = document.getElementById("search").value;
@@ -60,24 +72,32 @@ fetch("https://nominatim.openstreetmap.org/search?format=json&q="+q)
 let lat = parseFloat(d[0].lat);
 let lon = parseFloat(d[0].lon);
 
-// 🔥 recherche point existant
-let existing = stops.find(s =>
-    Math.abs(s.lat - lat) < 0.0001 &&
-    Math.abs(s.lon - lon) < 0.0001
+// 🔥 fusion uniquement GPS
+let existing = stops.find(s => 
+    Math.abs(s.lat - lat) < 0.001 &&
+    Math.abs(s.lon - lon) < 0.001
 );
 
 if(existing){
-    existing.clients += 1;
-    existing.unload += 30;
+
+existing.clients += 1;
+existing.unload += 30;
+
+if(t < existing.time){
+    existing.time = t;
+}
+
 }else{
-    stops.push({
-        name:d[0].display_name,
-        lat:lat,
-        lon:lon,
-        time:t,
-        clients:1,
-        unload:30
-    });
+
+stops.push({
+name:d[0].display_name,
+lat:lat,
+lon:lon,
+time:t,
+clients:1,
+unload:30
+});
+
 }
 
 drawList();
@@ -87,15 +107,21 @@ drawList();
 
 // ---------------- LIST ----------------
 function drawList(){
+
 let html="";
+
 stops.forEach((s,i)=>{
+
 html+=`
 <li>
 ${i+1} - ${s.name}<br>
 Clients: ${s.clients} | Déchargement: ${s.unload} min
-<button onclick="removeStop(${i})">X</button>
-</li>`;
+<button onclick="removeStop(${i})">❌</button>
+</li>
+`;
+
 });
+
 document.getElementById("list").innerHTML=html;
 }
 
@@ -108,7 +134,7 @@ drawList();
 // ---------------- CALCUL ----------------
 function calculate(){
 
-if(stops.length<2) return alert("2 points minimum");
+if(stops.length < 2) return alert("2 points minimum");
 
 let coords = stops.map(s=>s.lon+","+s.lat).join(";");
 
@@ -145,30 +171,44 @@ let current = parseInt(h)*60 + parseInt(m);
 
 let html="";
 
-legs.forEach((leg,i)=>{
+stops.forEach((stop,i)=>{
 
-let stop = stops[i];
+let travel = 0;
 
-let travel = Math.round(leg.duration/60);
+// ✅ pas de trajet sur le 1er point
+if(i > 0){
+travel = Math.round(legs[i-1].duration/60);
+}
+
 let unload = stop.unload;
 
+// heure arrivée
 let hh = Math.floor(current/60);
 let mm = String(current%60).padStart(2,"0");
-
 let arrival = hh+":"+mm;
 
-let status = (arrival > stop.time) ? "bad":"ok";
+// statut retard uniquement
+let status = (arrival > stop.time) ? "bad" : "ok";
 
 html+=`
 <li class="${status}">
 ${i+1} - ${stop.name}<br>
 Clients: ${stop.clients}<br>
 RDV: ${stop.time} | Arrivée: ${arrival}<br>
-Trajet: ${travel} min + Déchargement: ${unload} min
+🚚 ${travel} min + ⬇ ${unload} min
 </li>
 `;
 
-current += travel + unload;
+// 🧠 attendre RDV si en avance
+let [rdvH, rdvM] = stop.time.split(":");
+let rdvMin = parseInt(rdvH)*60 + parseInt(rdvM);
+
+if(current < rdvMin){
+current = rdvMin;
+}
+
+// déchargement
+current += unload;
 
 });
 
